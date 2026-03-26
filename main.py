@@ -13,6 +13,7 @@ import database as db
 from research.comprehensive import ComprehensiveResearch
 from ml_engine.feedback_loop import TradeMemory, AdaptiveStrategy
 from strategies.adaptive_momentum import AdaptiveMomentumStrategy
+from notifier import notify_trade, notify_learn, notify_mistake
 from utils.logger import get_logger
 
 log = get_logger("main")
@@ -97,6 +98,20 @@ async def paper_trade_endpoint(ticker: str = "AAPL"):
         )
 
         evaluation["trade_id"] = trade_id
+
+        # Fire Telegram alert (non-blocking, don't fail the trade if it errors)
+        try:
+            await notify_trade(
+                ticker=ticker,
+                action=evaluation["decision"],
+                price=evaluation["entry_price"],
+                confidence=evaluation["confidence"],
+                score=evaluation["total_score"],
+                gates=evaluation["gates"],
+            )
+        except Exception:
+            pass
+
         return JSONResponse(evaluation)
     except Exception as e:
         log.error(f"Paper trade error for {ticker}: {e}")
@@ -110,6 +125,19 @@ async def close_trade_endpoint(trade_id: int, exit_price: float):
         result = await TradeMemory.update_trade_outcome(trade_id, exit_price)
         if "error" in result:
             raise HTTPException(status_code=404, detail=result["error"])
+
+        # Fire Telegram alert on mistake analysis
+        if "mistake_analysis" in result:
+            try:
+                ma = result["mistake_analysis"]
+                await notify_mistake(
+                    ticker=result.get("ticker", "?"),
+                    loss_pct=result.get("pnl_pct", 0),
+                    red_flags=ma.get("red_flags", []),
+                )
+            except Exception:
+                pass
+
         return JSONResponse(result)
     except HTTPException:
         raise
@@ -125,6 +153,18 @@ async def learn_endpoint():
         result = await adaptive_strategy.learn()
         # Invalidate researcher so it picks up new weights
         momentum_strategy.researcher = None
+
+        # Fire Telegram alert on parameter changes
+        if result.get("adjustments"):
+            try:
+                await notify_learn(
+                    adjustments=result["adjustments"],
+                    win_rate=result.get("win_rate", 0),
+                    total_trades=result.get("total_trades", 0),
+                )
+            except Exception:
+                pass
+
         return JSONResponse(result)
     except Exception as e:
         log.error(f"Learn error: {e}")
