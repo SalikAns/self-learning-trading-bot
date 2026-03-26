@@ -8,8 +8,8 @@ from utils.logger import get_logger
 
 log = get_logger("notifier")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_BOT_TOKEN = os.getenv("8689981602:AAHHp2DQwxa0HNupqEtCYIjGWqf3f_vTFDU", "")
+TELEGRAM_CHAT_ID = os.getenv("6784056041", "")
 BASE_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}" if TELEGRAM_BOT_TOKEN else ""
 
 
