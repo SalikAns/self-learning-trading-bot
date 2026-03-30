@@ -574,9 +574,23 @@ import threading
 # await send_trade_alert(ticker, "BUY", price, confidence)
 
 # At end of file:
-if __name__ == "__main__":
-    discord_thread = threading.Thread(target=run_discord_bot, daemon=True)
-    discord_thread.start()
+# Discord bot startup
+try:
+    from discord_bot import run_discord_bot
+    import threading
+    import os
     
+    token = os.getenv("DISCORD_TOKEN")
+    if token:
+        discord_thread = threading.Thread(target=run_discord_bot, daemon=True)
+        discord_thread.start()
+        print("🎓 Discord bot started in background thread")
+    else:
+        print("⚠️ DISCORD_TOKEN not set, Discord bot disabled")
+except Exception as e:
+    print(f"❌ Discord bot error: {e}")
+
+# Start web server
+if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=settings.PORT)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
