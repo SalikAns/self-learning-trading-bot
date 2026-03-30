@@ -567,3 +567,16 @@ async def get_stats():
         "open_positions": len([t for t in trades if t['status'] == 'OPEN']),
         "total_trades": len(trades)
     }
+    from discord_bot import run_discord_bot, send_trade_alert
+import threading
+
+# Modify your trade execution to call:
+# await send_trade_alert(ticker, "BUY", price, confidence)
+
+# At end of file:
+if __name__ == "__main__":
+    discord_thread = threading.Thread(target=run_discord_bot, daemon=True)
+    discord_thread.start()
+    
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=settings.PORT)
