@@ -1,3 +1,22 @@
+# Add this function before your FastAPI app
+async def autonomous_trading_loop():
+    """Runs every 30 minutes"""
+    while True:
+        try:
+            await trading_engine.run_trading_cycle()
+            await asyncio.sleep(1800)  # 30 minutes
+        except Exception as e:
+            logger.error(f"Autonomous trading error: {e}")
+            await asyncio.sleep(300)  # Wait 5 min on error
+
+# In your lifespan startup event:
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(autonomous_trading_loop())
+# After creating db and ml_engine, add:
+trading_engine = AutonomousTradingEngine(db, ml_engine)
+# At the top with other imports
+from autonomous_trading import AutonomousTradingEngine
 # Add these imports
 import asyncio
 import random
