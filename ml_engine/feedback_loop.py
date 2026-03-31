@@ -1,3 +1,82 @@
+class StrategyEvolutionEngine:
+    """Self-learning strategy optimizer"""
+    
+    def __init__(self, db):
+        self.db = db
+        self.strategy_history = []
+        
+    async def evolve_strategy(self, recent_trades):
+        """Generate new strategies from patterns"""
+        
+        if len(recent_trades) < 10:
+            return
+            
+        # Find patterns in winning trades
+        winning_patterns = []
+        for trade in recent_trades:
+            if trade['pnl'] > 0:
+                winning_patterns.append({
+                    'rsi_at_entry': trade['rsi'],
+                    'volume_at_entry': trade['volume'],
+                    'trend_at_entry': trade['trend']
+                })
+                
+        # Find patterns in losing trades
+        losing_patterns = []
+        for trade in recent_trades:
+            if trade['pnl'] < 0:
+                losing_patterns.append({
+                    'rsi_at_entry': trade['rsi'],
+                    'volume_at_entry': trade['volume'],
+                    'trend_at_entry': trade['trend']
+                })
+                
+        # Generate new strategy rules
+        new_strategy = {
+            'timestamp': datetime.now(),
+            'rules': [],
+            'expected_win_rate': 0
+        }
+        
+        # Rule 1: RSI entry range
+        if winning_patterns:
+            avg_rsi_win = sum(p['rsi_at_entry'] for p in winning_patterns) / len(winning_patterns)
+            new_strategy['rules'].append(f"Enter when RSI between {avg_rsi_win-10:.0f} and {avg_rsi_win+10:.0f}")
+            
+        # Rule 2: Volume requirement
+        if winning_patterns:
+            avg_volume_win = sum(p['volume_at_entry'] for p in winning_patterns) / len(winning_patterns)
+            new_strategy['rules'].append(f"Require volume {avg_volume_win:.0f}x average")
+            
+        # Rule 3: Avoid losing patterns
+        if losing_patterns:
+            avg_rsi_loss = sum(p['rsi_at_entry'] for p in losing_patterns) / len(losing_patterns)
+            new_strategy['rules'].append(f"AVOID RSI near {avg_rsi_loss:.0f}")
+            
+        # Store new strategy
+        await self.db.save_strategy(new_strategy)
+        
+        return new_strategy
+        
+    async def backtest_strategy(self, strategy, historical_data):
+        """Test new strategy on past data"""
+        # Simulate trades using strategy rules
+        simulated_trades = []
+        win_count = 0
+        
+        for day in historical_data:
+            if self.check_strategy_rules(strategy, day):
+                # Simulate trade
+                result = self.simulate_trade(day)
+                simulated_trades.append(result)
+                if result['pnl'] > 0:
+                    win_count += 1
+                    
+        win_rate = win_count / len(simulated_trades) if simulated_trades else 0
+        strategy['expected_win_rate'] = win_rate
+        strategy['backtested'] = True
+        
+        return strategy
 """
 Core learning engine: TradeMemory + AdaptiveStrategy.
 Tracks trades, analyses mistakes, and dynamically adjusts strategy parameters.
