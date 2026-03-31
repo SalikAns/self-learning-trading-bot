@@ -1,3 +1,21 @@
+# At the top of main.py, add this before importing discord
+import sys
+import warnings
+
+# Suppress audioop warning and provide fallback
+try:
+    import audioop
+except ImportError:
+    # Create a dummy audioop module for Discord.py
+    import types
+    audioop = types.ModuleType('audioop')
+    audioop.ratecv = lambda *args, **kwargs: (b'', None)
+    audioop.lin2lin = lambda *args, **kwargs: b''
+    sys.modules['audioop'] = audioop
+
+# Now import discord
+import discord
+from discord.ext import commands
 """
 FastAPI server + background task scheduler.
 Entry point for the self-learning trading bot.
