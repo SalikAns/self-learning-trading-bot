@@ -1,3 +1,216 @@
+# Add these imports
+import asyncio
+import random
+from datetime import datetime, timedelta
+from typing import List, Dict
+import yfinance as yf
+
+class AutonomousTradingEngine:
+    """Self-running trading bot that trades without commands"""
+    
+    def __init__(self, db, ml_engine):
+        self.db = db
+        self.ml = ml_engine
+        self.trading_hours = (9, 16)  # 9 AM to 4 PM EST
+        self.max_trades_per_day = 5
+        self.risk_per_trade = 0.02  # 2% of portfolio per trade
+        
+    async def run_trading_cycle(self):
+        """Main trading loop - runs every 30 minutes"""
+        
+        # Check if market is open
+        if not self.is_market_open():
+            return
+            
+        # Get watchlist or scan for opportunities
+        watchlist = await self.get_watchlist()
+        
+        for ticker in watchlist:
+            # Analyze stock
+            analysis = await self.analyze_opportunity(ticker)
+            
+            # Make decision: BUY, SELL, or HOLD
+            decision = await self.make_decision(analysis)
+            
+            if decision['action'] in ['BUY', 'SELL']:
+                await self.execute_trade(decision)
+                
+        # After trades, run learning cycle
+        await self.learn_from_trades()
+        
+    def is_market_open(self):
+        """Check if US markets are open"""
+        now = datetime.now()
+        # Weekday and within trading hours
+        if now.weekday() >= 5:  # Weekend
+            return False
+        if now.hour < self.trading_hours[0] or now.hour >= self.trading_hours[1]:
+            return False
+        return True
+        
+    async def analyze_opportunity(self, ticker):
+        """Deep analysis for autonomous decisions"""
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="1mo")
+        
+        # Technical indicators
+        sma_20 = hist['Close'].rolling(20).mean().iloc[-1]
+        sma_50 = hist['Close'].rolling(50).mean().iloc[-1]
+        current_price = hist['Close'].iloc[-1]
+        
+        # RSI calculation
+        delta = hist['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs.iloc[-1]))
+        
+        # Volume analysis
+        avg_volume = hist['Volume'].rolling(20).mean().iloc[-1]
+        current_volume = hist['Volume'].iloc[-1]
+        volume_surge = current_volume / avg_volume
+        
+        return {
+            'ticker': ticker,
+            'price': current_price,
+            'sma_20': sma_20,
+            'sma_50': sma_50,
+            'rsi': rsi,
+            'volume_surge': volume_surge,
+            'trend': 'bullish' if current_price > sma_20 else 'bearish'
+        }
+        
+    async def make_decision(self, analysis):
+        """AI-powered decision making"""
+        score = 0
+        reasons = []
+        
+        # Technical scoring
+        if analysis['trend'] == 'bullish':
+            score += 30
+            reasons.append("Uptrend confirmed")
+        if analysis['rsi'] < 30:
+            score += 25
+            reasons.append("Oversold (buy signal)")
+        elif analysis['rsi'] > 70:
+            score -= 30
+            reasons.append("Overbought (avoid)")
+            
+        if analysis['volume_surge'] > 1.5:
+            score += 15
+            reasons.append("High volume surge")
+            
+        # Learn from past mistakes (ML)
+        mistake_adjustment = await self.ml.get_adjustment(analysis['ticker'])
+        score += mistake_adjustment['score']
+        if mistake_adjustment['reason']:
+            reasons.append(mistake_adjustment['reason'])
+            
+        # Decision threshold
+        if score > 50:
+            return {
+                'action': 'BUY',
+                'ticker': analysis['ticker'],
+                'score': score,
+                'reasons': reasons,
+                'price': analysis['price']
+            }
+        elif score < -30:
+            return {
+                'action': 'SELL',
+                'ticker': analysis['ticker'],
+                'score': score,
+                'reasons': reasons,
+                'price': analysis['price']
+            }
+        else:
+            return {'action': 'HOLD', 'ticker': analysis['ticker'], 'score': score}
+            
+    async def execute_trade(self, decision):
+        """Execute autonomous trade"""
+        # Get portfolio value
+        portfolio = await self.get_portfolio_value()
+        
+        # Calculate position size
+        position_size = portfolio * self.risk_per_trade
+        
+        if decision['action'] == 'BUY':
+            shares = position_size / decision['price']
+            
+            # Store trade
+            await self.db.record_trade({
+                'ticker': decision['ticker'],
+                'action': 'BUY',
+                'shares': shares,
+                'price': decision['price'],
+                'timestamp': datetime.now(),
+                'reason': decision['reasons'],
+                'autonomous': True
+            })
+            
+            # Send alert
+            await self.send_alert(f"🤖 AUTO-TRADE: BUY {decision['ticker']}\n"
+                                 f"Shares: {shares:.2f}\n"
+                                 f"Price: ${decision['price']:.2f}\n"
+                                 f"Score: {decision['score']}\n"
+                                 f"Reasons: {', '.join(decision['reasons'])}")
+                                 
+        elif decision['action'] == 'SELL':
+            # Find holdings to sell
+            holdings = await self.db.get_holdings(decision['ticker'])
+            if holdings > 0:
+                await self.db.record_trade({
+                    'ticker': decision['ticker'],
+                    'action': 'SELL',
+                    'shares': holdings,
+                    'price': decision['price'],
+                    'timestamp': datetime.now(),
+                    'reason': decision['reasons'],
+                    'autonomous': True
+                })
+                
+                await self.send_alert(f"🤖 AUTO-TRADE: SELL {decision['ticker']}\n"
+                                     f"Shares: {holdings:.2f}\n"
+                                     f"Price: ${decision['price']:.2f}\n"
+                                     f"Score: {decision['score']}\n"
+                                     f"Reasons: {', '.join(decision['reasons'])}")
+                                     
+    async def learn_from_trades(self):
+        """Analyze past trades and evolve strategy"""
+        # Get closed positions from last 24h
+        trades = await self.db.get_recent_trades(hours=24)
+        
+        if not trades:
+            return
+            
+        winners = [t for t in trades if t['pnl'] > 0]
+        losers = [t for t in trades if t['pnl'] < 0]
+        
+        # Adjust strategy based on performance
+        adjustments = {}
+        
+        if len(losers) > len(winners):
+            # More losers than winners - need conservative adjustment
+            adjustments['risk_per_trade'] = self.risk_per_trade * 0.8
+            adjustments['min_score_threshold'] = 60  # Higher bar for trades
+            await self.send_alert("📉 STRATEGY ADJUSTMENT: Reducing risk due to poor performance")
+        elif len(winners) > len(losers) * 2:
+            # Killing it - can be more aggressive
+            adjustments['risk_per_trade'] = min(self.risk_per_trade * 1.2, 0.05)
+            adjustments['min_score_threshold'] = 40  # Lower bar
+            await self.send_alert("📈 STRATEGY ADJUSTMENT: Increasing risk due to strong performance")
+            
+        # Update strategy parameters
+        for key, value in adjustments.items():
+            setattr(self, key, value)
+            
+        # Log strategy evolution
+        await self.db.log_strategy_evolution({
+            'timestamp': datetime.now(),
+            'risk': self.risk_per_trade,
+            'win_rate': len(winners) / len(trades) if trades else 0,
+            'adjustments': adjustments
+        })
 # At the top of main.py, add this before importing discord
 import sys
 import warnings
@@ -612,3 +825,24 @@ except Exception as e:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)
+# Add after creating bot and before startup
+from autonomous_trading import AutonomousTradingEngine
+
+# Initialize autonomous engine
+trading_engine = AutonomousTradingEngine(db, ml_engine)
+
+# Background task for autonomous trading
+async def autonomous_trading_loop():
+    """Runs every 30 minutes"""
+    while True:
+        try:
+            await trading_engine.run_trading_cycle()
+            await asyncio.sleep(1800)  # 30 minutes
+        except Exception as e:
+            print(f"Autonomous trading error: {e}")
+            await asyncio.sleep(300)  # Wait 5 min on error
+
+# Start autonomous trading in background
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(autonomous_trading_loop())
