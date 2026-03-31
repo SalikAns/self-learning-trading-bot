@@ -1,3 +1,34 @@
+-- Track strategy evolution
+CREATE TABLE IF NOT EXISTS strategy_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME,
+    strategy_rules TEXT,
+    win_rate REAL,
+    trades_count INTEGER,
+    is_active BOOLEAN DEFAULT 0
+)
+
+-- Track autonomous trades separately
+CREATE TABLE IF NOT EXISTS autonomous_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT,
+    action TEXT,
+    shares REAL,
+    price REAL,
+    timestamp DATETIME,
+    reason TEXT,
+    score INTEGER,
+    pnl REAL DEFAULT 0
+)
+
+-- Track learning cycles
+CREATE TABLE IF NOT EXISTS learning_cycles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME,
+    trades_analyzed INTEGER,
+    adjustments_made TEXT,
+    new_strategy_generated BOOLEAN
+)
 """
 SQLite schema + async query helpers.
 """
